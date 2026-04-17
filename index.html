@@ -734,9 +734,9 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
 
     function pickTarget() {
       targetPos.set(
-        (Math.random() - 0.5) * 1.0,
+        (Math.random() - 0.5) * 0.55,
         baseY,
-        (Math.random() - 0.5) * 0.08
+        (Math.random() - 0.5) * 0.06
       );
       isMoving = true;
       if (walkAction && !emotionLocked) {
@@ -748,7 +748,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
     function arriveAtTarget() {
       isMoving = false;
       moveTimer = 0;
-      nextMove = 9 + Math.random() * 14;
+      nextMove = 18 + Math.random() * 20;
       if (currentBase === walkAction && idleAction) {
         crossFade(walkAction, idleAction, 0.4);
         currentBase = idleAction;
@@ -775,7 +775,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
         body: JSON.stringify({
           system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
           contents: history.slice(-20),
-          generationConfig: { responseMimeType: 'application/json' }
+          generationConfig: { responseMimeType: 'application/json', temperature: 1.4 }
         })
       });
       if (!res.ok) throw new Error(`Gemini ${res.status}`);
@@ -857,7 +857,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
       await wait(380);
       addBubble('Qué pasa tronk 👋', 'pablo');
       playEmotion('happy');
-      nextMove = 10 + Math.random() * 12;
+      nextMove = 20 + Math.random() * 18;
       moveTimer = 0;
     }
 
@@ -885,8 +885,8 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
       camera.position.y = currentCamY;
       camera.position.z = currentCamZ;
       const charX = character ? character.position.x : 0;
-      camera.position.x += (charX * 0.3 - camera.position.x) * (1 - Math.exp(-4 * dt));
-      camera.lookAt(charX * 0.3, 0.88, 0);
+      camera.position.x += (charX * 0.15 - camera.position.x) * (1 - Math.exp(-3 * dt));
+      camera.lookAt(charX * 0.15, 0.88, 0);
 
       // Particles
       const pa = partGeo.attributes.position.array;
@@ -912,7 +912,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
           const dist = character.position.distanceTo(targetPos);
           if (dist > 0.06) {
             const dir = targetPos.clone().sub(character.position).normalize();
-            character.position.addScaledVector(dir, Math.min(0.9 * dt, dist));
+            character.position.addScaledVector(dir, Math.min(0.55 * dt, dist));
             if (!emotionLocked) character.position.y = baseY;
             character.rotation.y = lerpAngle(character.rotation.y, Math.atan2(dir.x, dir.z), 0.12);
           } else {
@@ -923,7 +923,7 @@ RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
           if (moveTimer > nextMove) pickTarget();
           const camDir = camera.position.clone().sub(character.position).normalize();
           const faceAng = Math.atan2(camDir.x, camDir.z);
-          character.rotation.y = lerpAngle(character.rotation.y, faceAng, 0.025);
+          character.rotation.y = lerpAngle(character.rotation.y, faceAng, 0.07);
           if (!emotionLocked) character.position.y = baseY + Math.sin(elapsed * 0.9) * 0.0015;
         }
       }
