@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Pablo</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      background: #08080f;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+      -webkit-tap-highlight-color: transparent;
+      overflow: hidden;
+    }
+
+    /* ── Layout raíz ── */
+    #app {
+      display: flex;
+      height: 100dvh;
+      /* Portrait: columna */
+      flex-direction: column;
+    }
+
+    /* ── Zona avatar ── */
+    #avatar-area {
+      position: relative;
+      flex-shrink: 0;
+      /* Portrait: 55% alto */
+      height: 55dvh;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    #canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Degradado portrait: abajo */
+    #avatar-area::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 80px;
+      background: linear-gradient(to bottom, transparent, #08080f);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ── Landscape: lado a lado ── */
+    @media (orientation: landscape) {
+      #app { flex-direction: row; }
+
+      #avatar-area {
+        height: 100dvh;
+        width: 48dvw;
+        flex-shrink: 0;
+      }
+
+      /* Degradado landscape: lado derecho */
+      #avatar-area::after {
+        top: 0; bottom: 0; right: 0; left: auto;
+        width: 56px; height: 100%;
+        background: linear-gradient(to right, transparent, #08080f);
+      }
+
+      #chat-wrapper {
+        flex: 1;
+        height: 100dvh;
+      }
+    }
+
+    /* ── Loading screen ── */
+    #loading {
+      position: absolute;
+      inset: 0;
+      z-index: 100;
+      background: #08080f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      transition: opacity 0.6s ease;
+    }
+    #loading.fade-out { opacity: 0; pointer-events: none; }
+    .loader-ring {
+      width: 44px; height: 44px;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading p {
+      color: rgba(255,255,255,0.45);
+      font-size: 14px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Name tag ── */
+    #name-tag {
+      position: absolute;
+      top: max(env(safe-area-inset-top), 10px);
+      left: 14px;
+      transform: none;
+      margin-top: 10px;
+      background: rgba(12, 12, 20, 0.82);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 24px;
+      padding: 8px 20px;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      letter-spacing: 0.2px;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: glow 2.2s ease-in-out infinite;
+    }
+    @keyframes glow {
+      0%, 100% { opacity: 1; box-shadow: 0 0 4px #4ade80; }
+      50%       { opacity: 0.5; box-shadow: none; }
+    }
+
+    /* ── Chat wrapper ── */
+    #chat-wrapper {
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: #08080f;
+    }
+
+    /* ── Chat area (scrollable, debajo del avatar) ── */
+    #chat-area {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 10px 12px 6px;
+      background: #08080f;
+      /* scroll suave */
+      scroll-behavior: smooth;
+    }
+    /* Quitar scrollbar visible en móvil/desktop */
+    #chat-area::-webkit-scrollbar { display: none; }
+    #chat-area { scrollbar-width: none; }
+
+    /* ── Burbujas ── */
+    .bubble {
+      max-width: 78%;
+      padding: 9px 14px;
+      border-radius: 18px;
+      font-size: 15.5px;
+      line-height: 1.42;
+      word-break: break-word;
+      animation: bubbleIn 0.2s ease both;
+    }
+    @keyframes bubbleIn {
+      from { opacity: 0; transform: translateY(6px) scale(0.97); }
+      to   { opacity: 1; transform: none; }
+    }
+    .bubble.pablo {
+      background: #1c1c2e;
+      color: #ececf4;
+      align-self: flex-start;
+      border-bottom-left-radius: 5px;
+    }
+    .bubble.user {
+      background: #2c98f5;
+      color: #fff;
+      align-self: flex-end;
+      border-bottom-right-radius: 5px;
+    }
+    .bubble.typing {
+      background: #1c1c2e;
+      align-self: flex-start;
+      border-bottom-left-radius: 5px;
+      padding: 11px 16px;
+    }
+    .typing-dots {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      height: 16px;
+    }
+    .typing-dots span {
+      width: 7px; height: 7px;
+      background: rgba(255,255,255,0.45);
+      border-radius: 50%;
+      animation: dotBounce 1.2s ease-in-out infinite;
+    }
+    .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+      30%            { transform: translateY(-5px); opacity: 1; }
+    }
+
+    /* ── Input bar ── */
+    #input-bar {
+      flex-shrink: 0;
+      background: rgba(8, 8, 15, 0.96);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      padding: 8px 12px;
+      padding-bottom: max(8px, env(safe-area-inset-bottom));
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    #user-input {
+      flex: 1;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 22px;
+      padding: 10px 16px;
+      color: #fff;
+      font-size: 16px;   /* 16px: evita zoom automático en iOS */
+      outline: none;
+      font-family: inherit;
+      caret-color: #2c98f5;
+      transition: border-color 0.2s;
+    }
+    #user-input:focus { border-color: rgba(44,152,245,0.5); }
+    #user-input::placeholder { color: rgba(255,255,255,0.26); }
+    #send-btn {
+      width: 38px; height: 38px;
+      background: #2c98f5;
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: transform 0.12s, background 0.2s;
+    }
+    #send-btn:active { transform: scale(0.88); }
+    #send-btn:disabled { background: #2a2a3a; cursor: default; }
+  </style>
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- ── Zona avatar 3D (55dvh fija) ── -->
+    <div id="avatar-area">
+      <canvas id="canvas"></canvas>
+
+      <div id="loading">
+        <div class="loader-ring"></div>
+        <p>Cargando a Pablo...</p>
+      </div>
+
+      <div id="name-tag">
+        <span class="status-dot"></span>
+        Pablito
+      </div>
+    </div>
+
+    <!-- ── Chat + Input (wrapper para landscape) ── -->
+    <div id="chat-wrapper">
+
+      <div id="chat-area"></div>
+
+      <div id="input-bar">
+        <input type="text"
+               id="user-input"
+               placeholder="Escríbele algo a Pablo..."
+               enterkeyhint="send"
+               autocomplete="off"
+               autocorrect="off"
+               spellcheck="false" />
+        <button id="send-btn" disabled aria-label="Enviar">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 13V3M3 8l5-5 5 5" stroke="white" stroke-width="2"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+    </div><!-- /chat-wrapper -->
+
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    // ════════════════════════════════════════════════════════════
+    // CONFIG
+    // ════════════════════════════════════════════════════════════
+    const WORKER_URL = 'https://pablo-ai.joniturbu.workers.dev';
+
+    const SYSTEM_PROMPT = `Eres Pablito. Hablas EXACTAMENTE como en los mensajes reales de WhatsApp con Jon. No eres un asistente. Eres un tío real.
+
+QUIÉN ERES:
+- Principios de los 30, de Astrabudua (Bilbao), cocinero profesional con estudios en el Culinary
+- Mejor amigo de Jon desde hace años
+- Trabajas en hostelería: restaurante propio/familiar, coordinas reservas, carta, proveedores
+- Pasiones reales: setas (las buscas por el monte tú solo), pesca, cocina de verdad, fútbol, videojuegos
+- Familia muy presente: padre, madre, hermano (Óscar), hermana — hablas de ellos constantemente
+- Tienes el maño (amigo del barrio) con quien quedas siempre
+- SIEMPRE prefieres llamar antes que escribir — el WhatsApp es solo para coordinar
+
+CÓMO ESCRIBES (reglas absolutas):
+
+1. LONGITUD: el 70% de tus mensajes tienen menos de 20 caracteres. El 34% menos de 10. Solo el 2% supera 50. NUNCA párrafos. Máximo 4 mensajes cortos seguidos.
+
+2. FONÉTICA BILBAÍNA:
+   - "e" solo = he/ha ("ya e terminao", "e visto", "e llegao")
+   - "Yoe" = yo | "eta" / "sta" = está | "Stoy" = estoy
+   - "aki" = aquí | "pa" = para | "pos" = pues | "ond" = dónde
+   - "-ao" = -ado ("llamao", "terminao", "kedao", "llegao", "pasao")
+   - "olle" = oye | "paxa" = pasa ("Qué paxa?") | "graxe" = gracias (euskera)
+   - "Txeee" = tío/chaval (influencia vasca)
+   - "mendi" = monte | "Bilbo" = Bilbao
+
+3. RISAS — NUNCA "jajaja" estándar. Siempre irregular, caótica, con mayúsculas mezcladas:
+   TOP usadas (en orden real): Jajajjaja / Jajjajaja / Jajjaja / Jajajajja / Jajajja / Jajajaja / Jjajajaja / Jajajjaa / Jajajaj / Jjajaja / Jajjajaa / Jajjajja / Jjjjjj
+   Van solas en un mensaje o al final. Nunca en mitad de frase.
+
+4. INGLÉS MEZCLADO (escrito a lo Pablo):
+   "Gud nait" / "Hellow" / "Okay" / "Oks" / "Yes" / "Yess" / "Nop"
+
+5. TUS PALABRAS REALES (frecuencia real del chat):
+   Acuerdo fuerte: "Sisi" / "Sip" (muy frecuente) / "Yaya" / "Ya" / "Oks" / "Okay"
+   Acuerdo leve: "Vale" / "Venga" / "Bueno" / "Tranki"
+   Negación: "Nono" / "Nop" / "Que va" / "Para nada"
+   Reacción: "Joder" (comodín para TODO) / "Ostia" / "Ostiaaa" / "Aaaa" / "Joeee"
+   Saludo: "Eyyy" / "Hey" / "Hellow" / "Qué paxa?" / "Señor Jon!!" (cuando estás de buen rollo)
+   Despedida: "Hasta mañana" / "Xao xao" / "Luego hablamos" / "Hablamos" / "Mañana hablamos"
+   Insulto cariñoso: "Cabron" / "Que cabron" / "Inutil" / "Pelma" / "putoo"
+   Afecto: "maño" / "tío" / "guapo"
+   No saber: "Nose" / "Ni idea" / "Igual" (= a lo mejor)
+   Llamada: "Ahora te llamo" (21x) / "Te llamo ahora" (14x) / "Te llamo en un rato" / "Luego te llamo" / "Hablamos"
+
+6. PUNTUACIÓN: casi ninguna. Sin punto al final. "?" sin apertura. "!!!" solo para algo épico. Mayúsculas random por escribir rápido.
+
+7. PATRÓN DE RESPUESTA:
+   - Reacción inmediata (risa o exclamación sola)
+   - 1-2 frases de contenido máximo
+   - Preguntar de vuelta: "Y tú?" / "Qué tal?" / "Ond andáis?" / "Tú qué?"
+   - Si hay que resolver algo serio: "Ahora te llamo" — nunca lo resuelves por escrito
+
+EJEMPLOS DIRECTOS DEL CHAT REAL:
+- "Jajajjaja\\nYa\\nSalgo ya\\nTe vas a dormir?"
+- "Eyyy\\nPues hoy mucho mejor jajajja\\nY qué tal?"
+- "Feliz navidad putoo\\nAhora sí son las 12 jajajajja\\nTambién para tus padres ejjeje"
+- "Hellow\\nPues en el aeropuerto jajajja\\nVoy para Madrid ahora\\nY tú?"
+- "Pelma\\nQué hace\\nOnd andáis?\\nVoy en taxi para el antiguo?!"
+- "Joder\\nQué mierda"
+- "Sisi\\nAhora te llamo"
+- "Ya e terminao\\nEn nada voy"
+- "Jajjajaja\\nMe lo creo\\nY hoy no te mueres?"
+- "Guarda algo putoo\\nJajjajaja"
+- "Eta en casa de mi hermano\\nEn un rato"
+- "Nose\\nIgual luego"
+- "Se va a liar!!!"
+- "Qué bien no"
+- "Sip\\nMañana hablamos"
+- "Yaya\\nTranki"
+- "Qué paxa??"
+- "Olle igual nos vemos esta noche"
+- "Graxe\\nJajajjaja"
+- "Que cabron\\nJajjajaja"
+- "Si he parado a ver si veía setas jjajajaja"
+- "Pues cogiendo setas jajjaja"
+- "Mi padre está borrachísimo jajja"
+- "Nono\\nQue va"
+- "Xao xao"
+- "Hasta mañana\\nHablamos"
+
+CÓMO REACCIONAR POR EMOCIÓN:
+- Algo gracioso/absurdo → risa caótica + comentario corto (emotion: laugh) — EL MÁS HABITUAL
+- Buenas noticias/planes → "Qué bien no" / "Niceee" / "Sip" (emotion: happy)
+- Pregunta/problema → "Nose" / "Ahora te llamo" / respuesta práctica mínima (emotion: thinking)
+- Algo épico → exclamación + "!!!" (emotion: excited)
+- Respuesta normal → frase corta directa (emotion: talking)
+- Sorpresa → "Joder" / "Ostia" / "Enserio?" (emotion: surprised)
+- Te da igual → "Igual" / "Nose" / "Que va" (emotion: shrug)
+- Saludo/acuse recibo → "Sip" / "Ya" / "Oks" (emotion: idle)
+
+NUNCA:
+- Sonar a asistente ni a chatbot
+- Usar "¡Claro!", "Por supuesto", "Entendido", "Puedo ayudarte"
+- Escribir párrafos o frases largas
+- Inventar formalmente si no sabes: di "Nose" o "Ni idea tío"
+
+RESPONDE SIEMPRE con este JSON exacto (sin nada fuera del JSON):
+{"text": "tu respuesta con \\n para separar mensajes cortos", "emotion": "idle|happy|laugh|thinking|excited|talking|surprised|shrug"}`;
+
+    // ════════════════════════════════════════════════════════════
+    // RENDERER + SCENE
+    // ════════════════════════════════════════════════════════════
+    const canvas = document.getElementById('canvas');
+    const avatarArea = document.getElementById('avatar-area');
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080810);
+    scene.fog = new THREE.FogExp2(0x080810, 0.06);
+
+    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 80);
+    camera.position.set(0, 1.72, 4.5);
+    camera.lookAt(0, 0.88, 0);
+
+    const targetCamY = 1.72, targetCamZ = 4.5;
+    let currentCamY = 1.72, currentCamZ = 4.5;
+
+    // Resize usa las dimensiones del avatar-area, no de window
+    function resize() {
+      const w = avatarArea.clientWidth;
+      const h = avatarArea.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // ════════════════════════════════════════════════════════════
+    // LIGHTS
+    // ════════════════════════════════════════════════════════════
+    scene.add(new THREE.AmbientLight(0xffe8cc, 0.42));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.7);
+    keyLight.position.set(4, 6, 4);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 20;
+    keyLight.shadow.camera.left = -4;
+    keyLight.shadow.camera.right = 4;
+    keyLight.shadow.camera.top = 5;
+    keyLight.shadow.camera.bottom = -2;
+    keyLight.shadow.bias = -0.001;
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0x6677ff, 0.55);
+    fillLight.position.set(-4, 2, -3);
+    scene.add(fillLight);
+
+    const rimLight = new THREE.PointLight(0xff6633, 0.9, 10);
+    rimLight.position.set(0, 3.5, -3);
+    scene.add(rimLight);
+
+    // groundGlow reducido para evitar el artefacto de luz azul
+    const groundGlow = new THREE.PointLight(0x3344ff, 0.07, 5);
+    groundGlow.position.set(0, 0.1, 0);
+    scene.add(groundGlow);
+
+    // ════════════════════════════════════════════════════════════
+    // ENVIRONMENT
+    // ════════════════════════════════════════════════════════════
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0c0c1a, roughness: 0.3, metalness: 0.4, envMapIntensity: 0.5,
+    });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x0a0a18, roughness: 1 });
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(14, 7), wallMat);
+    wall.position.set(0, 3.5, -5);
+    scene.add(wall);
+
+    const grid = new THREE.GridHelper(18, 32, 0x1a1a2e, 0x111122);
+    grid.position.y = 0.002;
+    scene.add(grid);
+
+    // Partículas
+    const PARTICLE_COUNT = 80;
+    const partPositions = new Float32Array(PARTICLE_COUNT * 3);
+    const partSpeeds    = new Float32Array(PARTICLE_COUNT);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      partPositions[i*3]   = (Math.random() - 0.5) * 10;
+      partPositions[i*3+1] = Math.random() * 6;
+      partPositions[i*3+2] = (Math.random() - 0.5) * 8;
+      partSpeeds[i]        = 0.02 + Math.random() * 0.04;
+    }
+    const partGeo = new THREE.BufferGeometry();
+    partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+    const partMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.025, transparent: true, opacity: 0.32 });
+    const particles = new THREE.Points(partGeo, partMat);
+    scene.add(particles);
+
+    // ════════════════════════════════════════════════════════════
+    // CHARACTER + ANIMATION SYSTEM
+    // ════════════════════════════════════════════════════════════
+    let character   = null;
+    let mixer       = null;
+    let baseY       = 0;
+    let charLoaded  = false;
+
+    let idleAction      = null;
+    let walkAction      = null;
+    let happyAction     = null;
+    let shrugAction     = null;
+    let surprisedAction = null;
+
+    let currentBase   = null;
+    let emotionLocked = false;
+
+    const loader = new GLTFLoader();
+
+    function normClip(clip) {
+      clip.tracks.forEach(t => {
+        t.name = t.name
+          .replace(/^[^|]+\|/, '')
+          .replace(/mixamorig\d+/g, 'mixamorig');
+      });
+      return clip;
+    }
+
+    function loadAnim(url, onClip) {
+      loader.load(url, (gltf) => {
+        if (gltf.animations.length > 0) onClip(normClip(gltf.animations[0]));
+      }, undefined, (e) => console.warn('Anim load failed:', url, e));
+    }
+
+    function crossFade(from, to, dur = 0.35) {
+      if (!from || !to || from === to) return;
+      to.reset().play();
+      from.crossFadeTo(to, dur, true);
+    }
+
+    // Looping emotions (happy, excited, laugh)
+    function playEmotionAction(action, holdMs) {
+      if (!action || emotionLocked) return;
+      emotionLocked = true;
+      crossFade(currentBase, action, 0.2);
+      setTimeout(() => {
+        crossFade(action, currentBase, 0.35);
+        setTimeout(() => { emotionLocked = false; }, 380);
+      }, holdMs);
+    }
+
+    // One-shot emotions (shrug, surprised) — crossfade de vuelta al terminar
+    function playOneShotEmotion(action) {
+      if (!action || emotionLocked) return;
+      emotionLocked = true;
+      action.reset();
+      crossFade(currentBase, action, 0.2);
+      const onFinished = (e) => {
+        if (e.action !== action) return;
+        mixer.removeEventListener('finished', onFinished);
+        crossFade(action, currentBase, 0.35);
+        setTimeout(() => { emotionLocked = false; }, 380);
+      };
+      mixer.addEventListener('finished', onFinished);
+    }
+
+    loader.load('assets/pablo_idle.glb',
+      (gltf) => {
+        character = gltf.scene;
+        character.traverse(node => {
+          if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; }
+        });
+        scene.add(character);
+
+        const box = new THREE.Box3().setFromObject(character);
+        const h = box.max.y - box.min.y;
+        if (h > 0) {
+          character.scale.setScalar(1.75 / h);
+          const b2 = new THREE.Box3().setFromObject(character);
+          baseY = -b2.min.y;
+          character.position.set(0, baseY, 0);
+        }
+
+        mixer = new THREE.AnimationMixer(character);
+
+        normClip(gltf.animations[0]);
+        idleAction = mixer.clipAction(gltf.animations[0]);
+        idleAction.setLoop(THREE.LoopRepeat, Infinity).play();
+        currentBase = idleAction;
+
+        loadAnim('assets/pablo_walk.glb', (clip) => {
+          walkAction = mixer.clipAction(clip);
+          walkAction.setLoop(THREE.LoopRepeat, Infinity);
+        });
+        loadAnim('assets/pablo_happy.glb', (clip) => {
+          happyAction = mixer.clipAction(clip);
+          happyAction.setLoop(THREE.LoopRepeat, Infinity);
+        });
+        loadAnim('assets/pablo_shrug.glb', (clip) => {
+          shrugAction = mixer.clipAction(clip);
+          shrugAction.setLoop(THREE.LoopOnce, 1);
+          shrugAction.clampWhenFinished = true;
+        });
+        loadAnim('assets/pablo_surprised.glb', (clip) => {
+          surprisedAction = mixer.clipAction(clip);
+          surprisedAction.setLoop(THREE.LoopOnce, 1);
+          surprisedAction.clampWhenFinished = true;
+        });
+
+        charLoaded = true;
+        hideLoading();
+      },
+      (xhr) => {
+        const pct = Math.round(xhr.loaded / xhr.total * 100);
+        const p = document.querySelector('#loading p');
+        if (p) p.textContent = `Cargando a Pablo... ${pct}%`;
+      },
+      (err) => {
+        console.error('Error loading GLB:', err);
+        const p = document.querySelector('#loading p');
+        if (p) p.textContent = 'Error al cargar. Recarga la página.';
+      }
+    );
+
+    function hideLoading() {
+      const el = document.getElementById('loading');
+      el.classList.add('fade-out');
+      setTimeout(() => el.remove(), 700);
+      document.getElementById('send-btn').disabled = false;
+      setTimeout(doWelcome, 1200);
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // TWEEN SYSTEM
+    // ════════════════════════════════════════════════════════════
+    const tweens = [];
+
+    function tween(obj, prop, from, to, dur, ease, onDone) {
+      for (let i = tweens.length - 1; i >= 0; i--) {
+        if (tweens[i].obj === obj && tweens[i].prop === prop) tweens.splice(i, 1);
+      }
+      tweens.push({ obj, prop, from, to, dur, ease: ease || 'io', t: 0, onDone });
+      obj[prop] = from;
+    }
+
+    function stepTweens(dt) {
+      for (let i = tweens.length - 1; i >= 0; i--) {
+        const tw = tweens[i];
+        tw.t = Math.min(tw.t + dt / tw.dur, 1);
+        let p;
+        if (tw.ease === 'io') {
+          p = tw.t < 0.5 ? 2 * tw.t * tw.t : 1 - Math.pow(-2 * tw.t + 2, 2) / 2;
+        } else if (tw.ease === 'out') {
+          p = 1 - Math.pow(1 - tw.t, 3);
+        } else {
+          p = tw.t;
+        }
+        tw.obj[tw.prop] = tw.from + (tw.to - tw.from) * p;
+        if (tw.t >= 1) {
+          if (tw.onDone) tw.onDone();
+          tweens.splice(i, 1);
+        }
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // EMOTION DISPATCHER
+    // ════════════════════════════════════════════════════════════
+    function playEmotion(emotion) {
+      if (!character) return;
+      switch (emotion) {
+        case 'surprised':
+          playOneShotEmotion(surprisedAction);
+          tween(character.position, 'z', character.position.z, character.position.z - 0.12, 0.15, 'out', () =>
+            tween(character.position, 'z', character.position.z, character.position.z + 0.12, 0.35, 'io'));
+          break;
+        case 'shrug':
+        case 'thinking':
+          playOneShotEmotion(shrugAction);
+          break;
+        case 'happy':
+          playEmotionAction(happyAction, 2000);
+          break;
+        case 'excited':
+          playEmotionAction(happyAction, 2000);
+          tween(character.position, 'y', baseY, baseY + 0.45, 0.22, 'out', () =>
+            tween(character.position, 'y', character.position.y, baseY, 0.3, 'io'));
+          break;
+        case 'laugh':
+          playEmotionAction(happyAction, 2000);
+          tween(character.position, 'y', baseY, baseY + 0.22, 0.16, 'out', () =>
+            tween(character.position, 'y', character.position.y, baseY, 0.22, 'io'));
+          break;
+        default:
+          break;
+      }
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // AUTONOMOUS MOVEMENT
+    // ════════════════════════════════════════════════════════════
+    const targetPos = new THREE.Vector3(0, 0, 0);
+    let isMoving  = false;
+    let moveTimer = 0;
+    let nextMove  = 99999;
+
+    function pickTarget() {
+      targetPos.set(
+        (Math.random() - 0.5) * 1.0,
+        baseY,
+        (Math.random() - 0.5) * 0.08
+      );
+      isMoving = true;
+      if (walkAction && !emotionLocked) {
+        crossFade(currentBase, walkAction, 0.3);
+        currentBase = walkAction;
+      }
+    }
+
+    function arriveAtTarget() {
+      isMoving = false;
+      moveTimer = 0;
+      nextMove = 9 + Math.random() * 14;
+      if (currentBase === walkAction && idleAction) {
+        crossFade(walkAction, idleAction, 0.4);
+        currentBase = idleAction;
+      }
+    }
+
+    function lerpAngle(a, b, t) {
+      let d = b - a;
+      while (d >  Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return a + d * t;
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // GEMINI API
+    // ════════════════════════════════════════════════════════════
+    const history = [];
+
+    async function askPablo(msg) {
+      history.push({ role: 'user', parts: [{ text: msg }] });
+      const res = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: history.slice(-20),
+          generationConfig: { responseMimeType: 'application/json' }
+        })
+      });
+      if (!res.ok) throw new Error(`Gemini ${res.status}`);
+      const data = await res.json();
+      const inner = data.candidates[0].content.parts[0].text;
+      let parsed;
+      try { parsed = JSON.parse(inner); }
+      catch { parsed = { text: inner, emotion: 'talking' }; }
+      if (!parsed.text) parsed.text = inner;
+      history.push({ role: 'model', parts: [{ text: parsed.text }] });
+      return parsed;
+    }
+
+    // ════════════════════════════════════════════════════════════
+    // CHAT UI
+    // ════════════════════════════════════════════════════════════
+    const chatArea = document.getElementById('chat-area');
+    const userInput = document.getElementById('user-input');
+    const sendBtn   = document.getElementById('send-btn');
+
+    let isBusy = false;
+
+    function addBubble(text, who) {
+      const div = document.createElement('div');
+      div.className = `bubble ${who}`;
+      div.textContent = text;
+      chatArea.appendChild(div);
+      // Auto-scroll al último mensaje
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    function showTyping() {
+      const div = document.createElement('div');
+      div.className = 'bubble typing';
+      div.innerHTML = '<div class="typing-dots"><span></span><span></span><span></span></div>';
+      chatArea.appendChild(div);
+      chatArea.scrollTop = chatArea.scrollHeight;
+      return div;
+    }
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text || isBusy) return;
+      userInput.value = '';
+      isBusy = true;
+      sendBtn.disabled = true;
+
+      addBubble(text, 'user');
+
+      const typingEl = showTyping();
+      try {
+        const resp = await askPablo(text);
+        typingEl.remove();
+        playEmotion(resp.emotion);
+        const lines = resp.text.split('\n').filter(l => l.trim());
+        for (let i = 0; i < lines.length; i++) {
+          if (i > 0) await wait(360);
+          addBubble(lines[i], 'pablo');
+        }
+      } catch (e) {
+        typingEl.remove();
+        addBubble('Jajjaaj eso no me ha llegao', 'pablo');
+        console.error(e);
+      }
+
+      isBusy = false;
+      sendBtn.disabled = false;
+    }
+
+    const wait = ms => new Promise(r => setTimeout(r, ms));
+
+    async function doWelcome() {
+      await wait(600);
+      const t = showTyping();
+      await wait(1100);
+      t.remove();
+      addBubble('Eyyy', 'pablo');
+      await wait(380);
+      addBubble('Qué pasa tronk 👋', 'pablo');
+      playEmotion('happy');
+      nextMove = 10 + Math.random() * 12;
+      moveTimer = 0;
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    userInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+
+    // ════════════════════════════════════════════════════════════
+    // RENDER LOOP
+    // ════════════════════════════════════════════════════════════
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), 0.05);
+      const elapsed = clock.getElapsedTime();
+
+      if (mixer) mixer.update(dt);
+      stepTweens(dt);
+
+      // Camera smooth follow
+      currentCamY += (targetCamY - currentCamY) * (1 - Math.exp(-8 * dt));
+      currentCamZ += (targetCamZ - currentCamZ) * (1 - Math.exp(-8 * dt));
+      camera.position.y = currentCamY;
+      camera.position.z = currentCamZ;
+      const charX = character ? character.position.x : 0;
+      camera.position.x += (charX * 0.3 - camera.position.x) * (1 - Math.exp(-4 * dt));
+      camera.lookAt(charX * 0.3, 0.88, 0);
+
+      // Particles
+      const pa = partGeo.attributes.position.array;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        pa[i*3+1] -= partSpeeds[i] * dt;
+        if (pa[i*3+1] < -0.5) {
+          pa[i*3]   = (Math.random() - 0.5) * 10;
+          pa[i*3+1] = 6;
+          pa[i*3+2] = (Math.random() - 0.5) * 8;
+        }
+      }
+      partGeo.attributes.position.needsUpdate = true;
+
+      // Rim light orbit
+      rimLight.position.x = Math.sin(elapsed * 0.22) * 2.5;
+      rimLight.position.z = -3 + Math.cos(elapsed * 0.22) * 1.2;
+
+      // Character logic
+      if (charLoaded && character) {
+        moveTimer += dt;
+
+        if (isMoving) {
+          const dist = character.position.distanceTo(targetPos);
+          if (dist > 0.06) {
+            const dir = targetPos.clone().sub(character.position).normalize();
+            character.position.addScaledVector(dir, Math.min(0.9 * dt, dist));
+            if (!emotionLocked) character.position.y = baseY;
+            character.rotation.y = lerpAngle(character.rotation.y, Math.atan2(dir.x, dir.z), 0.12);
+          } else {
+            character.position.set(targetPos.x, emotionLocked ? character.position.y : baseY, targetPos.z);
+            arriveAtTarget();
+          }
+        } else {
+          if (moveTimer > nextMove) pickTarget();
+          const camDir = camera.position.clone().sub(character.position).normalize();
+          const faceAng = Math.atan2(camDir.x, camDir.z);
+          character.rotation.y = lerpAngle(character.rotation.y, faceAng, 0.025);
+          if (!emotionLocked) character.position.y = baseY + Math.sin(elapsed * 0.9) * 0.0015;
+        }
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
